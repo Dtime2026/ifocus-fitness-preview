@@ -64,8 +64,8 @@ const Q=new URLSearchParams(location.search);
 const COACHES={avery:'Avery',ellis:'Ellis',maren:'Maren',ione:'Ione'};
 const EX={
   Squat:{label:'Squat',reps:8,speed:0.85,marks:[0.85],cues:['Chest up, sit back into your heels','Knees out over your toes','Drive up through the floor','Lovely depth, keep it smooth'],cam:{az:0.45,el:1.0,dist:4.3,look:0.8}},
-  Curl:{label:'Bicep curl',reps:8,speed:1.0,marks:[0.45,0.9],cues:['Elbows pinned to your sides','Squeeze at the top','Slow on the way down','No swinging, just biceps'],cam:{az:0.35,el:1.15,dist:3.7,look:1.0}},
-  Pushup:{label:'Push-up',reps:8,speed:0.7,marks:[0.85],cues:['Hands under your shoulders','Body in one straight line','Chest to the floor, then press','Brace your core'],cam:{az:1.25,el:0.9,dist:3.9,look:0.35}},
+  Curl:{label:'Bicep curl',reps:8,speed:1.0,marks:[0.45,0.9],cues:['Elbows pinned to your sides','Squeeze at the top','Slow on the way down','No swinging, just biceps'],cam:{az:0.35,el:1.1,dist:4.0,look:0.95}},
+  Pushup:{label:'Push-up',reps:8,speed:0.7,marks:[0.85],cues:['Hands under your shoulders','Body in one straight line','Chest to the floor, then press','Brace your core'],cam:{az:0.95,el:1.5,dist:4.4,look:0.25}},
 };
 const BOOST=['You have got this!','Nice one, keep it going!','Strong work, stay with me!','That is it, perfect form!','Breathe, and push!'];
 let coach=(Q.get('coach')||'avery').toLowerCase(); if(!COACHES[coach]) coach='avery';
@@ -92,7 +92,7 @@ ring.rotation.x=-Math.PI/2; ring.position.y=0.002; scene.add(ring);
 const pulse=new THREE.Mesh(new THREE.RingGeometry(0.9,1.0,96),new THREE.MeshBasicMaterial({color:0x36f1e0,transparent:true,opacity:0}));
 pulse.rotation.x=-Math.PI/2; pulse.position.y=0.003; scene.add(pulse);
 const cam=new THREE.PerspectiveCamera(32,innerWidth/innerHeight,0.05,60);
-const camT={az:0.3,el:1.0,dist:4.4,look:0.85}; const camC={...camT};
+const camT={az:0.3,el:1.0,dist:4.4,look:0.85}; const camC={...camT}; const focus=new THREE.Vector3(); const _h=new THREE.Vector3();
 function fitDist(d){ // keep full body in frame on portrait screens
   const a=innerWidth/innerHeight; return a<0.75? d*Math.min(1.9,0.75/a*1.05):d; }
 
@@ -147,7 +147,7 @@ function startSet(ex,target=EX[ex].reps){
   window.__state={ex,reps:0};
 }
 function idle(msg){S.ex=null; play('Idle'); setReps(null); setBtn(null); Object.assign(camT,{az:0.3,el:1.0,look:0.85,dist:fitDist(4.4)}); if(msg)cue(msg);}
-function workout(){S.queue=['Squat','Curl','Pushup'].map(e=>({e,n:Q.has('rec')?5:EX[e].reps})); nextInQueue();}
+function workout(){S.wk=true;S.queue=['Squat','Curl','Pushup'].map(e=>({e,n:Q.has('rec')?5:EX[e].reps})); nextInQueue();}
 function nextInQueue(){const q=S.queue.shift(); if(!q){S.ex=null;play('Talk');setReps(null);setBtn(null);Object.assign(camT,{az:0.2,el:1.2,look:1.1,dist:fitDist(3.6)});cue(`Workout complete. Brilliant session, see you tomorrow!`);later(()=>{if(!S.ex)idle();},6);return;}
   startSet(q.e,q.n);}
 function onRep(){
@@ -155,6 +155,7 @@ function onRep(){
   const left=S.target-S.reps; const ex=EX[S.ex];
   if(left===0){ const done=S.ex; S.ex=null; play('Idle'); setBtn(null);
     if(S.queue.length){cue(`${S.reps}! ${ex.label}s done. Next up, ${EX[S.queue[0].e].label.toLowerCase()}s.`); later(nextInQueue,2.6);} 
+    else if(S.wk){S.wk=false; cue(`${S.reps}! Workout complete. Brilliant session, see you tomorrow!`); later(()=>{if(!S.ex){setReps(null);play('Talk');}},2.5); later(()=>{if(!S.ex&&C.cur==='Talk')play('Idle');},9);}
     else {cue(`${S.reps}! Set complete. Great work.`); later(()=>{if(!S.ex){setReps(null);}},2.5);} return; }
   if(left===3) cue(`${S.reps}. Three more!`); else if(left===1) cue(`${S.reps}. Last one, make it count!`);
   else if(S.reps%2===0) cue(`${S.reps}. ${ex.cues[(S.reps/2)%ex.cues.length]}`); else cue(String(S.reps));
@@ -174,7 +175,7 @@ window.boost=boost;
 
 document.getElementById('bar').addEventListener('click',e=>{const b=e.target.closest('.btn'); if(!b)return; const a=b.dataset.a;
   if(a==='voice'){voiceOn=!voiceOn;b.textContent=voiceOn?'Voice on':'Voice off'; if(!voiceOn)speechSynthesis?.cancel(); return;}
-  S.queue=[]; if(a==='workout') workout(); else startSet(a);});
+  S.queue=[];S.wk=false; if(a==='workout') workout(); else startSet(a);});
 
 async function switchCoach(id){
   coach=id; renderChips(); $('load').style.display='block';
@@ -202,7 +203,8 @@ function tick(dt){
   }
   simT+=dt; runJobs();
   for(const k of ['az','el','dist','look']) camC[k]+=(camT[k]-camC[k])*Math.min(1,dt*2.2);
-  cam.position.set(Math.sin(camC.az)*camC.dist,camC.el,Math.cos(camC.az)*camC.dist); cam.lookAt(0,camC.look,0);
+  if(C&&C.bones.Hips){C.bones.Hips.getWorldPosition(_h); _h.y=0; focus.lerp(_h,Math.min(1,dt*2.5));}
+  cam.position.set(focus.x+Math.sin(camC.az)*camC.dist,camC.el,focus.z+Math.cos(camC.az)*camC.dist); cam.lookAt(focus.x,camC.look,focus.z);
   flash=Math.max(0,flash-dt*1.6); pulse.material.opacity=flash*0.9; const s=1+(1-flash)*1.2; pulse.scale.set(s,s,s);
   ring.material.opacity=0.35+Math.sin(performance.now()/600)*0.12+flash*0.5;
   r.render(scene,cam);
